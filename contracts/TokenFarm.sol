@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@chainlink/contracts/src/interfaces/AggregatorV3Interface.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 contract TokenFarm is Ownable {
     address[] public allowedTokens;
@@ -23,19 +23,20 @@ contract TokenFarm is Ownable {
     }
 
     function issueTokens() public onlyOwner {
-        for (uint256 stakersIndex=0; stakersIndex < stakers.lenght; stakersIndex++){
+        for (uint256 stakersIndex=0; stakersIndex < stakers.length; stakersIndex++){
             address recipient = stakers[stakersIndex];
             uint256 userTotalValue = getUserTotalValue(recipient);
-            dappToken.transfer(recipient, &&&);
+            dappToken.transfer(recipient, userTotalValue);
         }
     }
 
     function getUserTotalValue(address _user) public view returns (uint256){
         uint256 totalValue = 0;
         require(uniqueTokensStaked[_user] > 0, 'No token staked!');
-        for (uint256 allowedTokenIndex=0; allowedTokenIndex < allowedToken.lenght; allowedTokenIndex++){
-            totalValue = totalValue + getUserSingleTokenValue(_user, allowedToken[allowedTokenIndex]);
+        for (uint256 allowedTokenIndex=0; allowedTokenIndex < allowedTokens.length; allowedTokenIndex++){
+            totalValue = totalValue + getUserSingleTokenValue(_user, allowedTokens[allowedTokenIndex]);
         }
+        return totalValue;
     }
 
     function getUserSingleTokenValue(address _user, address _token) public view returns (uint256){
@@ -43,13 +44,17 @@ contract TokenFarm is Ownable {
             return 0;
         }
 //        price of the token * stakingBalance[_token][_user]
-        getTokenValue(_token);
+        (uint256 price, uint256 decimals) = getTokenValue(_token);
+        return (stakingBalance[_token][_user] * price / 10**decimals);
     }
 
-    function getTokenValue(address _token) public view returns (uint256) {
+    function getTokenValue(address _token) public view returns (uint256, uint256) {
         // priceFeedAddress
         address priceFeedAddress = tokenPriceFeedMapping[_token];
-
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(priceFeedAddress);
+        (,int256 price,,,) = priceFeed.latestRoundData();
+        uint8 decimals = priceFeed.decimals();
+        return (uint256(price), uint256(decimals));
     }
 
     function stakeTokens(uint256 _amount, address _token) public {
@@ -61,6 +66,14 @@ contract TokenFarm is Ownable {
         if (uniqueTokensStaked[msg.sender] == 1) {
             stakers.push(msg.sender);
         }
+    }
+
+    function unStakeToken(address _token) public {
+        uint256 balance = stakingBalance[_token][msg.sender];
+        require(balance > 0, 'Staking balance cant be 0');
+        IERC20(_token).transfer(msg.sender, balance);
+        stakingBalance[_token][msg.sender] = 0;
+        uniqueTokensStaked[msg.sender] = uniqueTokensStaked[msg.sender] - 1;
     }
 
     function updateUniqueTokensStaked(address _user, address _token) internal {
